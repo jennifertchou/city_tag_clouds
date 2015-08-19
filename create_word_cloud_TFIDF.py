@@ -81,9 +81,9 @@ for row in pg_cur:
         freqs[word] += 1
         uniq_users_per_word[word].add(username)
 
-#take out words tweeted by less than 30 people
+#take out words tweeted by less than 10 people
 for word in uniq_users_per_word:
-    if len(uniq_users_per_word[word]) < 30:
+    if len(uniq_users_per_word[word]) < 10:
         del freqs[word]
 
 #since this word shows up in the city, increment each word's IDF        
@@ -92,11 +92,14 @@ for word in freqs:
 
 #look at other cities to further increase IDF values
 for city in cities:
+    users_per_word = defaultdict(set)
     if city == args.city: continue
     print "looking at " + city
-    pg_cur.execute("SELECT text FROM tweet_" + city + ";")
+    pg_cur.execute("SELECT text,user_screen_name FROM tweet_" + city + 
+                    " ORDER BY RANDOM() LIMIT 1000000;")
     for row in pg_cur:
         tweet = row[0]
+        username = row[1]
         #replace unicode special chars with ascii version
         tweet = tweet.replace('“','"').replace('”','"')
         tweet = tweet.replace('’',"'").replace('‘',"'")
@@ -111,20 +114,25 @@ for city in cities:
             tweet = tweet.replace(punct,"") 
         wordList = tweet.split(" ")
         for word in wordList:
+            word = word.lower()
             #don't need to do all that word filtering above because
             #those words will be ignored here
             if word in IDF:
-                IDF[word] += 1
+                users_per_word[word].add(username) 
+    #if a word was tweeted by at least 10 people, increment that word's IDF
+    for word in users_per_word:
+        if len(users_per_word[word]) < 10: continue
+        IDF[word] += 1
 
-#calculating TFIDF = TF * IDF
-#TF = # of times a word appears in list/total # of words in list
+#TF = # of times a word appears in list/total # of words in list 
+#   but not doing the division because it makes the numbers 
+#   too small and everything becomes 0.0 
 #IDF = log_e(total num of cities/# of cities with word w in it)
 for word in freqs:
-    TFIDF[word] = (freqs[word]/len(freqs)) * \
-                    math.log(float(len(cities))/IDF[word])
+    TFIDF[word] = freqs[word] *  math.log(float(len(cities))/IDF[word])
 
 TFIDF = sorted(TFIDF.items(), key=lambda item:item[1], reverse=True)
-TFIDF = TFIDF[:75]
+TFIDF = TFIDF[:100]
 
 print "creating word cloud"
 
@@ -133,3 +141,9 @@ print "creating word cloud"
 #WordCloud(mask=pgh_outline).fit_words(freqs).to_file(args.city + "_word_cloud_skyline.jpg")
 
 WordCloud(width=800,height=400).fit_words(TFIDF).to_file(args.city + "_word_cloud_TFIDF.jpg")
+
+for item in TFIDF:
+    print item[0],
+    print " count:" + str(freqs[item[0]]) + " #nghds:" + str(IDF[item[0]]),
+    print " TFIDF:" + str(item[1])
+
